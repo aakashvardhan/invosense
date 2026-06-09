@@ -1,0 +1,16 @@
+node_modules/
+dist/
+public/bundle.js
+public/bundle.js.map
+
+# NEVER commit real keys
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
