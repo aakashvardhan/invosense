@@ -10,12 +10,16 @@ import {
   approveInvoice,
   rejectInvoice,
 } from "./api/invoices.js";
+import { loadDecisionsFromOut, resolveOutDir } from "./api/ingest.js";
 import type { Decision } from "./actions/pay.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
+const OUT_DIR = resolveOutDir(ROOT);
 
-// ── Bootstrap mock data ────────────────────────────────────────────────────
+// ── Bootstrap data ─────────────────────────────────────────────────────────
+// Prefer real OCR-pipeline output (out/). Fall back to bundled mocks so the
+// app still runs when the OCR directory is absent.
 
 function loadMockDecisions(): Decision[] {
   try {
@@ -27,7 +31,15 @@ function loadMockDecisions(): Decision[] {
   }
 }
 
-const decisions = loadMockDecisions();
+function bootstrapDecisions(): { source: string; decisions: Decision[] } {
+  const fromOut = loadDecisionsFromOut(OUT_DIR);
+  if (fromOut.length > 0) {
+    return { source: `OCR output (${OUT_DIR})`, decisions: fromOut };
+  }
+  return { source: "mocks/decisions.json", decisions: loadMockDecisions() };
+}
+
+const { source, decisions } = bootstrapDecisions();
 loadDecisions(decisions);
 
 // ── Express app ────────────────────────────────────────────────────────────
@@ -39,6 +51,9 @@ app.use(express.json());
 
 // Serve the React frontend from /public
 app.use(express.static(resolve(ROOT, "public")));
+
+// Serve the annotated OCR invoice images (with bounding boxes) from out/
+app.use("/invoice-images", express.static(OUT_DIR));
 
 // ── API routes ─────────────────────────────────────────────────────────────
 
@@ -80,6 +95,7 @@ const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
 app.listen(PORT, () => {
   console.log(`[SERVER] invo-frontend listening on http://localhost:${PORT}`);
-  console.log(`[SERVER] Loaded ${decisions.length} mock decisions`);
+  console.log(`[SERVER] Loaded ${decisions.length} decisions from ${source}`);
+  console.log(`[SERVER] Serving invoice images from ${OUT_DIR} at /invoice-images`);
   console.log(`[SERVER] API: GET /invoices  POST /invoices/:id/approve|reject`);
 });

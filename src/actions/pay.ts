@@ -14,12 +14,31 @@ export interface Decision {
   reasons: string[];
   tax_rule_url: string;
   line_items: LineItem[];
+  /** Optional OCR provenance — populated when the invoice comes from the OCR pipeline (out/). */
+  ocr?: OcrMeta;
 }
 
 export interface LineItem {
   description: string;
   qty: number;
   unit_price: number;
+}
+
+/** Raw OCR-extracted fields, per-field confidence, bounding boxes and the annotated image. */
+export interface OcrMeta {
+  company: string;
+  gst_id?: string;
+  invoice_no?: string;
+  date?: string;
+  taxable?: number;
+  tax?: number;
+  total: number;
+  confidence: Record<string, number>;
+  overall_confidence: number;
+  /** [x, y, width, height] in image pixels, keyed by field name. */
+  boxes: Record<string, number[]>;
+  /** URL the frontend can use to load the annotated invoice image. */
+  image_url: string;
 }
 
 export interface PaymentResult {

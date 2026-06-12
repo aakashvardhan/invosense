@@ -67,6 +67,20 @@
     .pay-card:hover { box-shadow:0 4px 20px rgba(79,108,247,.12); }
     /* Copy flash */
     .copy-flash { color:var(--green)!important; }
+    /* Invoice image modal */
+    .modal-overlay { position:fixed;inset:0;background:rgba(15,23,42,.55);backdrop-filter:blur(3px);z-index:50;display:none;align-items:center;justify-content:center;padding:24px; }
+    .modal-overlay.open { display:flex;animation:fadeUp .2s ease; }
+    .modal-box { background:#fff;border-radius:1rem;max-width:1040px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(15,23,42,.35); }
+    .modal-head { display:flex;justify-content:space-between;align-items:center;padding:1rem 1.5rem;border-bottom:1px solid var(--border); }
+    .modal-body { display:flex;gap:1.5rem;padding:1.5rem;overflow:auto;flex-wrap:wrap; }
+    .modal-img-wrap { flex:1 1 420px;min-width:300px;background:#F8FAFF;border:1px solid var(--border);border-radius:.75rem;padding:8px;display:flex;align-items:flex-start;justify-content:center; }
+    .modal-img-wrap img { max-width:100%;height:auto;border-radius:.5rem; }
+    .modal-side { flex:1 1 320px;min-width:280px; }
+    .ocr-field-row { display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border); }
+    .conf-bar { height:6px;border-radius:6px;background:#F0F4FF;width:80px;overflow:hidden;flex-shrink:0; }
+    .conf-bar > div { height:100%;border-radius:6px; }
+    .modal-close { cursor:pointer;border:none;background:#F1F5F9;color:var(--body);width:32px;height:32px;border-radius:8px;font-size:1rem;line-height:1; }
+    .modal-close:hover { background:#E2E8F0; }
   </style>
 </head>
 <body>
@@ -134,9 +148,9 @@
         <p class="text-xs" style="color:#94A3B8">testnet USDC equivalent *</p>
       </div>
       <div class="card stat-card-amber p-6 fade-in" style="animation-delay:.1s">
-        <p class="text-xs font-semibold uppercase tracking-wider mb-1" style="color:#6B7280">Awaiting Review</p>
-        <p id="stat-review" class="text-3xl font-bold mb-1" style="color:#F59E0B">—</p>
-        <p class="text-xs" style="color:#94A3B8">require human decision</p>
+        <p class="text-xs font-semibold uppercase tracking-wider mb-1" style="color:#6B7280">RM Flagged</p>
+        <p id="stat-review" class="text-3xl font-bold mb-1" style="color:#F59E0B">MYR 0</p>
+        <p id="stat-review-sub" class="text-xs" style="color:#94A3B8">0 flagged · 0 needs review</p>
       </div>
     </div>
 
@@ -297,6 +311,31 @@
 
 </main>
 
+<!-- ═══════════════ INVOICE IMAGE MODAL ═══════════════ -->
+<div id="img-modal" class="modal-overlay" onclick="if(event.target===this)closeInvoiceModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div>
+        <h3 id="modal-title" class="text-base font-bold" style="color:#0F172A">Invoice</h3>
+        <p id="modal-sub" class="text-xs" style="color:#6B7280">Extracted fields &amp; detected bounding boxes</p>
+      </div>
+      <button class="modal-close" onclick="closeInvoiceModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-img-wrap">
+        <img id="modal-img" alt="Annotated invoice with bounding boxes" />
+      </div>
+      <div class="modal-side">
+        <div class="flex items-center justify-between mb-3">
+          <span class="text-xs font-semibold uppercase tracking-wider" style="color:#6B7280">OCR Confidence</span>
+          <span id="modal-overall" class="chip chip-green">—</span>
+        </div>
+        <div id="modal-fields"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════════ JAVASCRIPT ═══════════════ -->
 <script>
 // ── State ────────────────────────────────────────────────
@@ -318,8 +357,8 @@ function statusBadge(s) {
     case 'processing': case 'PAY_QUEUED':
       return `<span class="chip chip-grey"><span class="spinner"></span> Processing</span>`;
     case 'PAID':         return `<span class="chip chip-green">✓ Paid</span>`;
-    case 'HUMAN_REVIEW': return `<span class="chip chip-amber">⚠ Review</span>`;
-    case 'FLAG':         return `<span class="chip chip-red">⚑ Flagged</span>`;
+    case 'HUMAN_REVIEW': return `<span class="chip chip-amber">⚠ Needs Review</span>`;
+    case 'FLAG':         return `<span class="chip chip-red">⚑ Needs Review</span>`;
     case 'REJECTED':     return `<span class="chip chip-red">✕ Rejected</span>`;
     case 'ERROR':        return `<span class="chip chip-red">! Error</span>`;
     default:             return `<span class="chip chip-grey">${s}</span>`;
@@ -396,11 +435,15 @@ function renderDashboard(records) {
   const paid    = records.filter(r => r.status === 'PAID');
   const flagged = records.filter(r => r.status === 'FLAG');
   const review  = records.filter(r => r.status === 'HUMAN_REVIEW');
-  const totalMyr = paid.reduce((s,r) => s + r.decision.amount_myr, 0);
+  const totalMyr      = paid.reduce((s,r) => s + r.decision.amount_myr, 0);
+  // Spec: "RM flagged" = total MYR value of all FLAG + HUMAN_REVIEW invoices
+  const flaggedMyr    = [...flagged, ...review].reduce((s,r) => s + r.decision.amount_myr, 0);
 
   document.getElementById('stat-processed').textContent = records.length;
   document.getElementById('stat-paid').textContent      = fmtMyr(totalMyr);
-  document.getElementById('stat-review').textContent    = flagged.length + review.length;
+  document.getElementById('stat-review').textContent    = fmtMyr(flaggedMyr);
+  const sub = document.getElementById('stat-review-sub');
+  if (sub) sub.textContent = `${flagged.length} flagged · ${review.length} needs review`;
 
   // Review panel
   const reviewSection = document.getElementById('review-section');
@@ -437,8 +480,11 @@ function renderDashboard(records) {
               ${r.decision.reasons.map(x => `<li class="flex items-start gap-2 text-sm" style="color:#92400E"><span>•</span><span>${x}</span></li>`).join('')}
             </ul>
           </div>` : ''}
-        <a href="${r.decision.tax_rule_url}" target="_blank" rel="noopener noreferrer"
-           class="text-xs hover:underline" style="color:#4F6CF7">Tax ruling ↗</a>
+        <div class="flex items-center gap-3 flex-wrap">
+          <a href="${r.decision.tax_rule_url}" target="_blank" rel="noopener noreferrer"
+             class="text-xs hover:underline" style="color:#4F6CF7">Tax ruling ↗</a>
+          ${imageBtn(r)}
+        </div>
       </div>`).join('');
   } else {
     reviewSection.classList.add('hidden');
@@ -456,7 +502,7 @@ function renderDashboard(records) {
              </div>`
           : r.status === 'PAID' && r.payment
             ? `<span class="font-mono text-xs" style="color:#4F6CF7">${shortHash(r.payment.tx_hash)}</span>`
-            : '—';
+            : '';
         const rowBg = r.status === 'HUMAN_REVIEW' ? 'style="background:#FFFBEB"'
                     : r.status === 'PAID'          ? 'style="background:#F0FDF4"' : '';
         return `<tr ${rowBg}>
@@ -465,7 +511,7 @@ function renderDashboard(records) {
           <td style="color:#0F172A;font-weight:600;font-variant-numeric:tabular-nums">${fmtMyr(r.decision.amount_myr)}</td>
           <td>${decisionBadge(r.decision.decision)}</td>
           <td>${statusBadge(r.status)}</td>
-          <td>${actions}</td>
+          <td><div class="flex items-center gap-2 flex-wrap">${actions}${imageBtn(r)}</div></td>
         </tr>`;
       }).join('');
 
@@ -561,6 +607,7 @@ function renderInvoicesPage(records) {
       <!-- Meta row -->
       <div class="flex flex-wrap items-center gap-4">
         <a href="${r.decision.tax_rule_url}" target="_blank" rel="noopener noreferrer" class="text-xs" style="color:#4F6CF7">📋 Tax ruling ↗</a>
+        ${imageBtn(r)}
         ${r.payment ? `<span class="text-xs font-mono" style="color:#6B7280">tx: ${shortHash(r.payment.tx_hash)}</span>` : ''}
         ${r.publish  ? `<a href="${r.publish.url}" target="_blank" class="text-xs" style="color:#4F6CF7">cited.md ↗</a>` : ''}
       </div>
@@ -734,6 +781,65 @@ function toggleTxLog() {
   const hidden=log.classList.toggle('hidden');
   ch.textContent = hidden ? '▼ Expand' : '▲ Collapse';
 }
+
+// ── Invoice image / bounding-box modal ────────────────────
+const confColor = c => c >= 0.95 ? '#10B981' : c >= 0.85 ? '#F59E0B' : '#EF4444';
+const FIELD_LABELS = {
+  company:'Company', gst_id:'GST ID', invoice_no:'Invoice No', date:'Date',
+  taxable:'Taxable', tax:'Tax', total:'Total',
+};
+
+// Small "View image" button — only when OCR provenance exists for the record
+function imageBtn(r) {
+  return r.decision.ocr
+    ? `<button class="btn btn-ghost" style="padding:4px 10px;font-size:.72rem" onclick="openInvoiceModal('${r.decision.invoice_id}')">🔍 Image</button>`
+    : '';
+}
+
+function openInvoiceModal(id) {
+  const r = _records.find(x => x.decision.invoice_id === id);
+  if (!r || !r.decision.ocr) return;
+  const ocr = r.decision.ocr;
+
+  document.getElementById('modal-title').textContent = `${r.decision.invoice_id} · ${r.decision.vendor}`;
+  document.getElementById('modal-sub').textContent =
+    `${r.decision.decision} · ${fmtMyr(r.decision.amount_myr)} · ${Object.keys(ocr.boxes||{}).length} bounding boxes`;
+
+  const img = document.getElementById('modal-img');
+  img.src = ocr.image_url;
+  img.onerror = () => { img.alt = 'Image not found at ' + ocr.image_url; };
+
+  const overall = document.getElementById('modal-overall');
+  overall.textContent = Math.round(ocr.overall_confidence * 100) + '% overall';
+  overall.style.background = '#F0F4FF';
+  overall.style.color = confColor(ocr.overall_confidence);
+
+  const order = ['company','gst_id','invoice_no','date','taxable','tax','total'];
+  const fields = document.getElementById('modal-fields');
+  fields.innerHTML = order.map(f => {
+    const val = ocr[f];
+    if (val === undefined || val === null) return '';
+    const conf = (ocr.confidence && ocr.confidence[f] != null) ? ocr.confidence[f] : null;
+    const hasBox = !!(ocr.boxes && ocr.boxes[f]);
+    const display = (f==='taxable'||f==='tax'||f==='total') ? fmtMyr(val) : val;
+    return `<div class="ocr-field-row">
+      <div style="min-width:0">
+        <div class="text-xs font-semibold" style="color:#6B7280">${FIELD_LABELS[f]||f} ${hasBox?'':'<span title="No bounding box detected" style="color:#EF4444">•</span>'}</div>
+        <div class="text-sm" style="color:#0F172A;word-break:break-word">${display}</div>
+      </div>
+      ${conf!=null ? `<div class="flex items-center gap-2 flex-shrink-0">
+        <div class="conf-bar"><div style="width:${conf*100}%;background:${confColor(conf)}"></div></div>
+        <span class="text-xs font-mono" style="color:${confColor(conf)};width:34px;text-align:right">${Math.round(conf*100)}%</span>
+      </div>` : '<span class="text-xs" style="color:#94A3B8">—</span>'}
+    </div>`;
+  }).join('');
+
+  document.getElementById('img-modal').classList.add('open');
+}
+function closeInvoiceModal() {
+  document.getElementById('img-modal').classList.remove('open');
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeInvoiceModal(); });
 
 // ── Poll ──────────────────────────────────────────────────
 async function fetchInvoices(force = false) {
