@@ -1,0 +1,5 @@
+# Optional — only needed for pipeline.py / CrewAI orchestration
+-r requirements.txt
+crewai>=0.86.0
+crewai-tools>=0.17.0
+langchain-openai>=0.2.0

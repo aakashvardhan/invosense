@@ -1,0 +1,14 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+Project Plan.url
+
+# Runtime data — keep folder structure via .gitkeep
+data/inbox/*
+!data/inbox/.gitkeep
+data/attachments/*
+!data/attachments/.gitkeep
+data/watch/*
+!data/watch/.gitkeep
+data/watch/processed/
