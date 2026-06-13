@@ -1,7 +1,26 @@
+# ── Python (extraction pipeline) ─────────────────────────────────────────────
 .venv/
 __pycache__/
 *.pyc
+
+# ── Node (frontend) ──────────────────────────────────────────────────────────
+node_modules/
+dist/
+public/bundle.js
+public/bundle.js.map
+
+# ── Secrets — NEVER commit real keys ─────────────────────────────────────────
 .env
+.env.local
+.env.*.local
+
+# ── Build / data output ──────────────────────────────────────────────────────
 out/
-.DS_Store
 *.zip
+
+# ── OS / editor ──────────────────────────────────────────────────────────────
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
